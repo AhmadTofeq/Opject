@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Object Detection</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap"
+      rel="stylesheet" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/index.css') }}" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" />
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+  </head>
+  <body>
+    <div class="container-fluid py-4 px-3">
+      <header class="text-center mb-5">
+        <h1>AI Vision System</h1>
+        <p class="lead">Real-time object detection with voice feedback</p>
+      </header>
+
+      <div class="camera-space text-center mb-5" id="cameraContainer">
+        <video
+          id="cameraFeed"
+          autoplay
+          playsinline
+          muted
+          style="max-width: 100%; border-radius: 12px"></video>
+      </div>
+
+      <div class="controls text-center mb-4">
+        <button id="startBtn" class="btn btn-lg btn-success">
+          <i class="bi bi-play-fill"></i> Start
+        </button>
+        <button id="stopBtn" class="btn btn-lg btn-danger">
+          <i class="bi bi-stop-fill"></i> Stop
+        </button>
+        <button id="pauseBtn" class="btn btn-lg btn-warning">
+          <i class="bi bi-pause-fill"></i> Pause
+        </button>
+        <button id="refreshBtn" class="btn btn-lg btn-primary">
+          <i class="bi bi-arrow-repeat"></i> Refresh
+        </button>
+      </div>
+
+      <div class="row gy-4">
+        <div class="col-12 col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-dark text-white">
+              <h3 class="m-0">
+                <i class="bi bi-list-check"></i> Detection Log
+              </h3>
+            </div>
+            <div class="card-body detection-log" id="detectionLog">
+              <!-- Detections will appear here -->
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-dark text-white">
+              <h3 class="m-0">
+                <i class="bi bi-speedometer2"></i> System Status
+              </h3>
+            </div>
+            <div class="card-body">
+              <div class="system-status">
+                <div class="status-item">
+                  <span class="status-label">System State:</span>
+                  <span class="badge bg-secondary" id="systemStatus">Idle</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label">Active Cameras:</span>
+                  <span id="activeCams">0/9</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label">Last Detection:</span>
+                  <span id="lastDetection">None</span>
+                </div>
+                <div class="status-item">
+                  <span class="status-label">Voice Output:</span>
+                  <span class="badge bg-success" id="voiceStatus">Enabled</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.addEventListener("load", () => {
+          // Call the server-side API
+          fetch("/api/speak", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              object: "car",
+              location: "left center",
+            }),
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              console.log(data.message || data.error);
+      
+              // Also use browser-side voice as fallback
+              const message = "Voice system is working";
+              const synth = window.speechSynthesis;
+              const utterance = new SpeechSynthesisUtterance(message);
+              utterance.lang = "en-US";
+              synth.speak(utterance);
+            })
+            .catch((error) => {
+              console.error("Voice API error:", error);
+            });
+        });
+      </script>      
+  </body>
+</html>

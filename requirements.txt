@@ -1,0 +1,9 @@
+Flask
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-WTF
+python-dotenv
+PyMySQL
+scikit-learn
+tensorflow
+openpyxl
