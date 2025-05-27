@@ -97,33 +97,94 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        window.addEventListener("load", () => {
-          // Call the server-side API
-          fetch("/api/speak", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              object: "car",
-              location: "left center",
-            }),
+      window.addEventListener("load", () => {
+        // Call the server-side API
+        fetch("/api/speak", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            object: "car",
+            location: "left center",
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            console.log(data.message || data.error);
+
+            // Also use browser-side voice as fallback
+            const message = "Voice system is working";
+            const synth = window.speechSynthesis;
+            const utterance = new SpeechSynthesisUtterance(message);
+            utterance.lang = "en-US";
+            synth.speak(utterance);
           })
-            .then((response) => response.json())
-            .then((data) => {
-              console.log(data.message || data.error);
-      
-              // Also use browser-side voice as fallback
-              const message = "Voice system is working";
-              const synth = window.speechSynthesis;
-              const utterance = new SpeechSynthesisUtterance(message);
-              utterance.lang = "en-US";
-              synth.speak(utterance);
-            })
-            .catch((error) => {
-              console.error("Voice API error:", error);
-            });
+          .catch((error) => {
+            console.error("Voice API error:", error);
+          });
+      });
+      let videoStream = null;
+      let detectionInterval = null;
+
+      const video = document.getElementById("cameraFeed");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+
+      startBtn.addEventListener("click", async () => {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
         });
-      </script>      
+        video.srcObject = videoStream;
+        document.getElementById("systemStatus").innerText = "Running";
+
+        detectionInterval = setInterval(() => {
+          captureAndSendFrame();
+        }, 2000);
+      });
+
+      pauseBtn.addEventListener("click", () => {
+        clearInterval(detectionInterval);
+        document.getElementById("systemStatus").innerText = "Paused";
+      });
+
+      stopBtn.addEventListener("click", () => {
+        clearInterval(detectionInterval);
+        if (videoStream) {
+          videoStream.getTracks().forEach((track) => track.stop());
+          video.srcObject = null;
+        }
+        document.getElementById("systemStatus").innerText = "Stopped";
+      });
+
+      refreshBtn.addEventListener("click", () => location.reload());
+
+      function captureAndSendFrame() {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg");
+
+        fetch("/detect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: dataUrl }),
+        })
+          .then((res) => res.json())
+          .then((detections) => {
+            const log = document.getElementById("detectionLog");
+            log.innerHTML = detections
+              .map((d) => `${d.object} on ${d.location}`)
+              .join("<br>");
+            document.getElementById("lastDetection").innerText =
+              detections.length ? detections[0].object : "None";
+          })
+          .catch((err) => console.error("Detection error:", err));
+      }
+    </script>
   </body>
 </html>
