@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, jsonify
+# app/routes.py
+from flask import Blueprint, render_template, request, jsonify, url_for
 import base64
 import numpy as np
 import cv2
@@ -17,20 +18,25 @@ def detect():
     if not data or 'image' not in data:
         return jsonify({'error': 'No image provided'}), 400
 
-    header, encoded = data['image'].split(",", 1)
-    image_bytes = base64.b64decode(encoded)
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    try:
+        header, encoded = data['image'].split(",", 1)
+        image_bytes = base64.b64decode(encoded)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception as e:
+        return jsonify({'error': f'Image decoding failed: {e}'}), 400
 
     detections = detect_objects(frame)
 
     for obj in detections:
         try:
-            requests.post("http://localhost:5000/api/speak", json={
+            # Safe and dynamic URL generation
+            speak_url = url_for('voice.speak', _external=True)
+            requests.post(speak_url, json={
                 "object": obj["object"],
                 "location": obj["location"]
-            })
+            }, timeout=2)
         except Exception as e:
-            print("❌ Voice API failed:", e)
+            print("❌ Voice API failed (will fallback in browser):", e)
 
     return jsonify(detections)
