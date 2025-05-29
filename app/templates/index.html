@@ -16,32 +16,33 @@
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" />
-    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
   </head>
   <body>
     <div class="container-fluid py-4 px-3">
       <header class="text-center mb-5">
         <h1>AI Vision System</h1>
-        <p class="lead">Real-time object detection with voice feedback</p>
+        <p class="lead">Real-time object detection with voice feedback for accessibility</p>
       </header>
 
+      <!-- Camera Feed Section -->
       <div class="camera-space text-center mb-5" id="cameraContainer">
         <video
           id="cameraFeed"
           autoplay
           playsinline
           muted
-          style="max-width: 100%; border-radius: 12px"></video>
+          style="max-width: 100%; max-height: 480px; border-radius: 12px; border: 2px solid #dee2e6;"></video>
       </div>
 
+      <!-- Control Buttons -->
       <div class="controls text-center mb-4">
-        <button id="startBtn" class="btn btn-lg btn-success">
-          <i class="bi bi-play-fill"></i> Start
+        <button id="startBtn" class="btn btn-lg btn-success me-2">
+          <i class="bi bi-play-fill"></i> Start Detection
         </button>
-        <button id="stopBtn" class="btn btn-lg btn-danger">
+        <button id="stopBtn" class="btn btn-lg btn-danger me-2">
           <i class="bi bi-stop-fill"></i> Stop
         </button>
-        <button id="pauseBtn" class="btn btn-lg btn-warning">
+        <button id="pauseBtn" class="btn btn-lg btn-warning me-2">
           <i class="bi bi-pause-fill"></i> Pause
         </button>
         <button id="refreshBtn" class="btn btn-lg btn-primary">
@@ -49,7 +50,9 @@
         </button>
       </div>
 
+      <!-- Status and Log Section -->
       <div class="row gy-4">
+        <!-- Detection Log -->
         <div class="col-12 col-md-6">
           <div class="card h-100">
             <div class="card-header bg-dark text-white">
@@ -57,12 +60,13 @@
                 <i class="bi bi-list-check"></i> Detection Log
               </h3>
             </div>
-            <div class="card-body detection-log" id="detectionLog">
-              <!-- Detections will appear here -->
+            <div class="card-body detection-log" id="detectionLog" style="max-height: 400px; overflow-y: auto;">
+              <div class="text-muted">Ready to detect objects...</div>
             </div>
           </div>
         </div>
 
+        <!-- System Status -->
         <div class="col-12 col-md-6">
           <div class="card h-100">
             <div class="card-header bg-dark text-white">
@@ -72,124 +76,57 @@
             </div>
             <div class="card-body">
               <div class="system-status">
-                <div class="status-item">
-                  <span class="status-label">System State:</span>
-                  <span class="badge bg-secondary" id="systemStatus">Idle</span>
+                <div class="status-item mb-3">
+                  <span class="status-label fw-bold">System State:</span>
+                  <span class="badge bg-secondary ms-2" id="systemStatus">Initializing</span>
+                </div>
+                <div class="status-item mb-3">
+                  <span class="status-label fw-bold">Camera Status:</span>
+                  <span class="badge bg-secondary ms-2" id="cameraStatus">Not Started</span>
+                </div>
+                <div class="status-item mb-3">
+                  <span class="status-label fw-bold">Last Detection:</span>
+                  <span id="lastDetection" class="ms-2">None</span>
+                </div>
+                <div class="status-item mb-3">
+                  <span class="status-label fw-bold">Voice Output:</span>
+                  <span class="badge bg-secondary ms-2" id="voiceStatus">Testing</span>
                 </div>
                 <div class="status-item">
-                  <span class="status-label">Active Cameras:</span>
-                  <span id="activeCams">0/9</span>
-                </div>
-                <div class="status-item">
-                  <span class="status-label">Last Detection:</span>
-                  <span id="lastDetection">None</span>
-                </div>
-                <div class="status-item">
-                  <span class="status-label">Voice Output:</span>
-                  <span class="badge bg-success" id="voiceStatus">Enabled</span>
+                  <span class="status-label fw-bold">Objects Detected:</span>
+                  <span id="objectCount" class="ms-2">0</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Instructions for Blind Users -->
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="card border-info">
+            <div class="card-header bg-info text-white">
+              <h4 class="m-0">
+                <i class="bi bi-info-circle"></i> Instructions
+              </h4>
+            </div>
+            <div class="card-body">
+              <ul class="mb-0">
+                <li><strong>Start Detection:</strong> Click the green "Start Detection" button or press Space</li>
+                <li><strong>Voice Feedback:</strong> Objects will be announced with their location (e.g., "Person in center", "Cup in top right")</li>
+                <li><strong>Grid System:</strong> Screen is divided into 9 areas: top/middle/bottom + left/center/right</li>
+                <li><strong>Controls:</strong> Use Pause to temporarily stop, Stop to end completely</li>
+                <li><strong>Camera:</strong> Single click to pause video, double click to stop camera</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
+    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-      window.addEventListener("load", () => {
-        const fallbackSpeak = (text) => {
-          const synth = window.speechSynthesis;
-          const utterance = new SpeechSynthesisUtterance(text);
-          utterance.lang = "en-US";
-          synth.speak(utterance);
-        };
-      
-        fetch("/api/speak", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            object: "car",
-            location: "left center",
-          }),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.error) {
-              console.warn("🟡 Backend voice failed. Fallback triggered.");
-              fallbackSpeak("Voice system fallback activated. " + data.error);
-            } else {
-              console.log("✅ Voice API:", data.message);
-            }
-          })
-          .catch((error) => {
-            console.error("❌ Voice API unreachable:", error);
-            fallbackSpeak("Backend voice is offline. Browser fallback speaking now.");
-          });
-      });      
-      let videoStream = null;
-      let detectionInterval = null;
-
-      const video = document.getElementById("cameraFeed");
-      const startBtn = document.getElementById("startBtn");
-      const stopBtn = document.getElementById("stopBtn");
-      const pauseBtn = document.getElementById("pauseBtn");
-      const refreshBtn = document.getElementById("refreshBtn");
-
-      startBtn.addEventListener("click", async () => {
-        videoStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
-        video.srcObject = videoStream;
-        document.getElementById("systemStatus").innerText = "Running";
-
-        detectionInterval = setInterval(() => {
-          captureAndSendFrame();
-        }, 2000);
-      });
-
-      pauseBtn.addEventListener("click", () => {
-        clearInterval(detectionInterval);
-        document.getElementById("systemStatus").innerText = "Paused";
-      });
-
-      stopBtn.addEventListener("click", () => {
-        clearInterval(detectionInterval);
-        if (videoStream) {
-          videoStream.getTracks().forEach((track) => track.stop());
-          video.srcObject = null;
-        }
-        document.getElementById("systemStatus").innerText = "Stopped";
-      });
-
-      refreshBtn.addEventListener("click", () => location.reload());
-
-      function captureAndSendFrame() {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg");
-
-        fetch("/detect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: dataUrl }),
-        })
-          .then((res) => res.json())
-          .then((detections) => {
-            const log = document.getElementById("detectionLog");
-            log.innerHTML = detections
-              .map((d) => `${d.object} on ${d.location}`)
-              .join("<br>");
-            document.getElementById("lastDetection").innerText =
-              detections.length ? detections[0].object : "None";
-          })
-          .catch((err) => console.error("Detection error:", err));
-      }
-    </script>
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
   </body>
 </html>
