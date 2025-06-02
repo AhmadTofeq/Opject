@@ -1,5 +1,5 @@
-// app/static/js/index.js - AI Vision System for Blind Users
-console.log('🚀 Loading AI Vision System...');
+// app/static/js/index.js - Optimized AI Vision System
+console.log('🚀 Loading Optimized AI Vision System...');
 
 // Global Variables
 let stream = null;
@@ -8,51 +8,38 @@ let detectionActive = false;
 let detectionInterval = null;
 let lastDetections = [];
 let paused = false;
+let canvas = null;
+let ctx = null;
 
-// Configuration
+// Optimized Configuration
 const CONFIG = {
-    DETECTION_INTERVAL: 2000,  // 2 seconds between detections
-    IMAGE_QUALITY: 0.8,        // JPEG quality (0.0 - 1.0)
-    RETRY_ATTEMPTS: 3,         // Max retry attempts for failed requests
+    DETECTION_INTERVAL: 3000,    // Increased to 3 seconds
+    IMAGE_QUALITY: 0.6,          // Reduced quality for better performance
+    RETRY_ATTEMPTS: 2,           // Reduced retry attempts
+    MAX_RESOLUTION: 640,         // Maximum image width
     VIDEO_CONSTRAINTS: {
-        width: { ideal: 640 },
-        height: { ideal: 480 }
+        width: { ideal: 640, max: 640 },
+        height: { ideal: 480, max: 480 },
+        frameRate: { ideal: 15, max: 20 }  // Reduced frame rate
     }
 };
 
-// DOM Elements (will be initialized on page load)
+// DOM Elements
 let elements = {};
 
-// Initialize everything when DOM is ready
+// Initialize system
 document.addEventListener('DOMContentLoaded', initializeSystem);
 
-/**
- * Main initialization function
- */
 function initializeSystem() {
-    console.log('🔧 Initializing AI Vision System...');
-    
-    // Get DOM elements
+    console.log('🔧 Initializing Optimized AI Vision System...');
     initializeDOMElements();
-    
-    // Set up event listeners
     setupEventListeners();
-    
-    // Initialize camera
-    initializeCamera();
-    
-    // Test voice system
-    testVoiceSystem();
-    
-    // Set up keyboard shortcuts for accessibility
     setupKeyboardShortcuts();
-    
-    console.log('✅ AI Vision System initialized successfully');
+    initializeCamera();
+    testVoiceSystem();
+    console.log('✅ System initialized successfully');
 }
 
-/**
- * Initialize DOM element references
- */
 function initializeDOMElements() {
     elements = {
         video: document.getElementById('cameraFeed'),
@@ -68,35 +55,29 @@ function initializeDOMElements() {
         objectCount: document.getElementById('objectCount')
     };
     
-    // Store video reference globally for easier access
     video = elements.video;
+    
+    // Create reusable canvas
+    canvas = document.createElement('canvas');
+    ctx = canvas.getContext('2d');
 }
 
-/**
- * Set up all event listeners
- */
 function setupEventListeners() {
-    // Button events
     elements.startBtn.addEventListener('click', startDetection);
     elements.stopBtn.addEventListener('click', stopDetection);
     elements.pauseBtn.addEventListener('click', pauseDetection);
     elements.refreshBtn.addEventListener('click', refreshSystem);
     
-    // Video events
     video.addEventListener('click', toggleVideoPlayback);
     video.addEventListener('dblclick', stopCamera);
     
-    // Error handling
+    // Better error handling
     window.addEventListener('error', handleGlobalError);
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
 }
 
-/**
- * Set up keyboard shortcuts for accessibility
- */
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
-        // Don't trigger shortcuts if user is typing in an input
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
             return;
         }
@@ -104,8 +85,10 @@ function setupKeyboardShortcuts() {
         switch(event.code) {
             case 'Space':
                 event.preventDefault();
-                if (detectionActive) {
+                if (detectionActive && !paused) {
                     pauseDetection();
+                } else if (detectionActive && paused) {
+                    pauseDetection(); // Resume
                 } else {
                     startDetection();
                 }
@@ -122,21 +105,10 @@ function setupKeyboardShortcuts() {
                     stopDetection();
                 }
                 break;
-            case 'KeyR':
-                if (event.ctrlKey) {
-                    event.preventDefault();
-                    refreshSystem();
-                }
-                break;
         }
     });
-    
-    console.log('⌨️ Keyboard shortcuts enabled: Space (start/pause), Ctrl+S (start), Ctrl+Q (stop), Ctrl+R (refresh)');
 }
 
-/**
- * Initialize camera with proper error handling
- */
 async function initializeCamera() {
     console.log('📹 Initializing camera...');
     updateCameraStatus('Requesting Access', 'warning');
@@ -148,43 +120,41 @@ async function initializeCamera() {
         });
         
         video.srcObject = stream;
+        
+        // Wait for video to be ready
+        await new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+                resolve();
+            };
+        });
+        
         updateCameraStatus('Ready', 'success');
         updateSystemStatus('Camera Ready', 'success');
         
-        console.log('✅ Camera initialized successfully');
-        
-        // Announce camera ready for blind users
-        announceToUser('Camera is ready. Press the Start Detection button to begin.');
+        console.log(`✅ Camera initialized: ${video.videoWidth}x${video.videoHeight}`);
+        announceToUser('Camera is ready. Press Space or Start Detection button to begin.');
         
     } catch (error) {
         console.error('❌ Camera initialization failed:', error);
         updateCameraStatus('Error', 'danger');
         updateSystemStatus('Camera Error', 'danger');
         
-        // Handle different types of camera errors
         let errorMessage = 'Camera access failed. ';
         if (error.name === 'NotAllowedError') {
             errorMessage += 'Please allow camera access and refresh the page.';
         } else if (error.name === 'NotFoundError') {
-            errorMessage += 'No camera found. Please connect a camera.';
+            errorMessage += 'No camera found.';
         } else if (error.name === 'NotReadableError') {
-            errorMessage += 'Camera is in use by another application.';
-        } else {
-            errorMessage += error.message;
+            errorMessage += 'Camera is busy.';
         }
         
-        alert(errorMessage);
         announceToUser(errorMessage);
     }
 }
 
-/**
- * Start object detection
- */
 function startDetection() {
     if (!stream || !video.srcObject) {
-        const msg = 'Camera is not ready. Please wait for camera initialization.';
-        alert(msg);
+        const msg = 'Camera is not ready. Please wait.';
         announceToUser(msg);
         return;
     }
@@ -198,28 +168,25 @@ function startDetection() {
     detectionActive = true;
     paused = false;
     
-    updateSystemStatus('Starting Detection', 'primary');
+    updateSystemStatus('Detection Active', 'success');
     
-    // Start detection loop
-    detectionInterval = setInterval(() => {
-        if (!paused && detectionActive) {
-            captureAndDetect();
-        }
-    }, CONFIG.DETECTION_INTERVAL);
-
-    // First detection after a short delay
+    // Immediate first detection
     setTimeout(() => {
         if (detectionActive && !paused) {
             captureAndDetect();
         }
     }, 500);
     
-    announceToUser('Object detection started. Objects will be announced as they are detected.');
+    // Regular detection interval
+    detectionInterval = setInterval(() => {
+        if (!paused && detectionActive) {
+            captureAndDetect();
+        }
+    }, CONFIG.DETECTION_INTERVAL);
+    
+    announceToUser('Object detection started.');
 }
 
-/**
- * Stop object detection
- */
 function stopDetection() {
     console.log('🛑 Stopping detection...');
     detectionActive = false;
@@ -234,73 +201,43 @@ function stopDetection() {
     updateDetectionLog('Detection stopped');
     updateObjectCount(0);
     
-    announceToUser('Object detection stopped.');
+    announceToUser('Detection stopped.');
 }
 
-/**
- * Pause/resume object detection
- */
 function pauseDetection() {
     if (!detectionActive) {
-        const msg = 'Detection is not running. Please start detection first.';
-        alert(msg);
+        const msg = 'Start detection first.';
         announceToUser(msg);
         return;
     }
 
     paused = !paused;
-    const status = paused ? 'Detection Paused' : 'Detecting Objects';
-    const variant = paused ? 'warning' : 'primary';
+    const status = paused ? 'Paused' : 'Active';
+    const variant = paused ? 'warning' : 'success';
     
-    updateSystemStatus(status, variant);
-    
-    const announcement = paused ? 'Detection paused.' : 'Detection resumed.';
-    announceToUser(announcement);
-    
-    console.log(`⏸️ Detection ${paused ? 'paused' : 'resumed'}`);
+    updateSystemStatus(`Detection ${status}`, variant);
+    announceToUser(paused ? 'Detection paused.' : 'Detection resumed.');
 }
 
-/**
- * Refresh the entire system
- */
 function refreshSystem() {
-    console.log('🔄 Refreshing system...');
     announceToUser('Refreshing system...');
-    setTimeout(() => {
-        location.reload();
-    }, 1000);
+    setTimeout(() => location.reload(), 1000);
 }
 
-/**
- * Toggle video playback (for user interaction)
- */
 function toggleVideoPlayback() {
     if (!video.srcObject) return;
-
     if (video.paused) {
         video.play();
-        console.log('▶️ Video resumed');
     } else {
         video.pause();
-        console.log('⏸️ Video paused');
     }
 }
 
-/**
- * Stop camera completely
- */
 function stopCamera() {
-    console.log('📹 Stopping camera...');
-    
-    // Stop detection first
     stopDetection();
     
-    // Stop camera stream
     if (stream) {
-        stream.getTracks().forEach(track => {
-            track.stop();
-            console.log(`🔇 Stopped ${track.kind} track`);
-        });
+        stream.getTracks().forEach(track => track.stop());
         video.srcObject = null;
         stream = null;
     }
@@ -310,32 +247,42 @@ function stopCamera() {
     announceToUser('Camera stopped.');
 }
 
-/**
- * Capture frame and send for detection
- */
 async function captureAndDetect() {
     if (!video || !video.videoWidth || !video.videoHeight) {
-        console.log('⚠️ Video not ready for capture');
+        console.log('⚠️ Video not ready');
         return;
     }
 
     try {
-        updateSystemStatus('Processing Frame', 'info');
+        updateSystemStatus('Processing...', 'info');
         
-        // Create canvas and capture frame
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // Optimize canvas size
+        const videoWidth = video.videoWidth;
+        const videoHeight = video.videoHeight;
         
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        let targetWidth = videoWidth;
+        let targetHeight = videoHeight;
         
-        // Convert to base64 with quality setting
+        // Resize if too large
+        if (videoWidth > CONFIG.MAX_RESOLUTION) {
+            const scale = CONFIG.MAX_RESOLUTION / videoWidth;
+            targetWidth = CONFIG.MAX_RESOLUTION;
+            targetHeight = Math.round(videoHeight * scale);
+        }
+        
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        
+        // Draw and compress
+        ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
         const dataUrl = canvas.toDataURL('image/jpeg', CONFIG.IMAGE_QUALITY);
         
-        console.log('📸 Frame captured, sending for detection...');
+        console.log(`📸 Capturing ${targetWidth}x${targetHeight} frame...`);
         
-        // Send to backend for detection
+        // Send with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
         const response = await fetch('/detect', {
             method: 'POST',
             headers: {
@@ -344,78 +291,88 @@ async function captureAndDetect() {
             body: JSON.stringify({ 
                 image: dataUrl,
                 timestamp: Date.now()
-            })
+            }),
+            signal: controller.signal
         });
 
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
         }
 
         const detections = await response.json();
         handleDetectionResults(detections);
         
     } catch (error) {
-        console.error('❌ Detection error:', error);
-        updateSystemStatus('Detection Error', 'danger');
-        updateDetectionLog(`Error: ${error.message}`);
+        if (error.name === 'AbortError') {
+            console.log('⏱️ Request timeout');
+            updateSystemStatus('Request Timeout', 'warning');
+        } else {
+            console.error('❌ Detection error:', error);
+            updateSystemStatus('Detection Error', 'warning');
+        }
+        
+        // Continue detection despite errors
+        updateDetectionLog('Detection error occurred, continuing...');
     }
 }
 
-/**
- * Handle detection results from backend
- */
 function handleDetectionResults(detections) {
-    console.log('🎯 Detection results:', detections);
-    
     if (!Array.isArray(detections)) {
-        console.error('❌ Invalid detection format:', detections);
+        console.error('❌ Invalid detection format');
         return;
     }
 
     lastDetections = detections;
     
-    // Update UI
     updateDetectionLog(detections);
     updateLastDetection(detections);
     updateObjectCount(detections.length);
     
-    // Update status based on results
     if (detections.length > 0) {
         updateSystemStatus(`Found ${detections.length} object(s)`, 'success');
+        console.log(`🎯 Detection results: ${detections.map(d => d.object).join(', ')}`);
     } else {
-        updateSystemStatus('Scanning for objects', 'primary');
+        updateSystemStatus('Scanning...', 'primary');
     }
 }
 
-/**
- * Update detection log display
- */
 function updateDetectionLog(detections) {
     const logElement = elements.detectionLog;
     if (!logElement) return;
 
     if (typeof detections === 'string') {
-        // Handle string messages (like "Detection stopped")
         logElement.innerHTML = `<div class="text-muted">${detections}</div>`;
         return;
     }
 
     if (!Array.isArray(detections) || detections.length === 0) {
-        logElement.innerHTML = '<div class="text-muted">No objects detected in current frame</div>';
+        logElement.innerHTML = '<div class="text-muted">No objects detected</div>';
         return;
     }
 
-    const logEntries = detections.map(detection => {
-        const confidence = detection.confidence ? ` (${(detection.confidence * 100).toFixed(1)}%)` : '';
+    // Group by object type for cleaner display
+    const grouped = {};
+    detections.forEach(det => {
+        if (!grouped[det.object]) {
+            grouped[det.object] = [];
+        }
+        grouped[det.object].push(det);
+    });
+
+    const logEntries = Object.entries(grouped).map(([object, dets]) => {
         const timestamp = new Date().toLocaleTimeString();
+        const locations = dets.map(d => d.location).join(', ');
+        const count = dets.length > 1 ? ` (${dets.length})` : '';
         
         return `
-            <div class="detection-entry mb-2 p-2 bg-light rounded border">
+            <div class="detection-entry mb-2 p-2 bg-light rounded">
                 <div class="fw-bold text-primary">
-                    ${detection.object.charAt(0).toUpperCase() + detection.object.slice(1)}
+                    ${object.charAt(0).toUpperCase() + object.slice(1)}${count}
                 </div>
                 <div class="text-muted">
-                    Location: <em>${detection.location}</em>${confidence}
+                    Location: <em>${locations}</em>
                 </div>
                 <small class="text-muted">${timestamp}</small>
             </div>
@@ -423,14 +380,9 @@ function updateDetectionLog(detections) {
     }).join('');
 
     logElement.innerHTML = logEntries;
-    
-    // Auto-scroll to bottom for latest detections
     logElement.scrollTop = logElement.scrollHeight;
 }
 
-/**
- * Update last detection display
- */
 function updateLastDetection(detections) {
     const element = elements.lastDetection;
     if (!element) return;
@@ -445,9 +397,6 @@ function updateLastDetection(detections) {
     }
 }
 
-/**
- * Update object count display
- */
 function updateObjectCount(count) {
     const element = elements.objectCount;
     if (!element) return;
@@ -456,26 +405,15 @@ function updateObjectCount(count) {
     element.className = count > 0 ? 'ms-2 fw-bold text-success' : 'ms-2 text-muted';
 }
 
-/**
- * Update system status with badge styling
- */
 function updateSystemStatus(status, variant = 'secondary') {
     const element = elements.systemStatus;
     if (!element) return;
 
-    // Remove existing badge classes
     element.className = element.className.replace(/bg-\w+/g, '');
-    
-    // Add new badge class
     element.classList.add(`bg-${variant}`);
     element.textContent = status;
-    
-    console.log(`📊 System Status: ${status}`);
 }
 
-/**
- * Update camera status
- */
 function updateCameraStatus(status, variant = 'secondary') {
     const element = elements.cameraStatus;
     if (!element) return;
@@ -485,89 +423,63 @@ function updateCameraStatus(status, variant = 'secondary') {
     element.textContent = status;
 }
 
-/**
- * Test voice system functionality
- */
 async function testVoiceSystem() {
     console.log('🔊 Testing voice system...');
     updateVoiceStatus('Testing', 'warning');
     
     try {
-        const response = await fetch('/api/speak', {
+        const response = await fetch('/test_voice', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                object: 'system',
-                location: 'initialization'
-            })
+            headers: { 'Content-Type': 'application/json' }
         });
 
-        const data = await response.json();
-        
         if (response.ok) {
-            console.log('✅ Voice system test successful');
             updateVoiceStatus('Working', 'success');
+            console.log('✅ Voice system test successful');
         } else {
-            console.warn('⚠️ Voice system test failed:', data.error);
-            updateVoiceStatus('Backend Error', 'warning');
-            
-            // Try browser fallback
+            updateVoiceStatus('Error', 'warning');
             tryBrowserSpeech('Voice system using browser fallback');
         }
         
     } catch (error) {
-        console.error('❌ Voice system unreachable:', error);
-        updateVoiceStatus('Using Browser', 'info');
-        
-        // Fallback to browser speech synthesis
-        tryBrowserSpeech('Voice system initialized with browser speech');
+        console.error('❌ Voice system error:', error);
+        updateVoiceStatus('Browser Only', 'info');
+        tryBrowserSpeech('Voice system using browser speech');
     }
 }
 
-/**
- * Try browser speech synthesis as fallback
- */
 function tryBrowserSpeech(message) {
     if ('speechSynthesis' in window) {
-        console.log('🔄 Using browser speech synthesis fallback');
         const utterance = new SpeechSynthesisUtterance(message);
         utterance.lang = 'en-US';
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
+        utterance.rate = 0.9;
         window.speechSynthesis.speak(utterance);
     } else {
-        console.error('❌ No speech synthesis available');
         updateVoiceStatus('Not Available', 'danger');
     }
 }
 
-/**
- * Announce message to user (for accessibility)
- */
 function announceToUser(message) {
-    // Try backend voice first, then browser fallback
+    console.log(`📢 Announcing: ${message}`);
+    
+    // Try backend first, then browser fallback
     fetch('/api/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            object: 'announcement',
+            object: 'system',
             location: message
         })
     }).catch(() => {
-        // Fallback to browser speech
         if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(message);
             utterance.lang = 'en-US';
+            utterance.rate = 0.9;
             window.speechSynthesis.speak(utterance);
         }
     });
 }
 
-/**
- * Update voice status display
- */
 function updateVoiceStatus(status, variant = 'secondary') {
     const element = elements.voiceStatus;
     if (!element) return;
@@ -577,22 +489,14 @@ function updateVoiceStatus(status, variant = 'secondary') {
     element.textContent = status;
 }
 
-/**
- * Global error handler
- */
 function handleGlobalError(event) {
     console.error('🚨 Global error:', event.error);
     updateSystemStatus('System Error', 'danger');
-    announceToUser('A system error occurred. Please refresh the page.');
 }
 
-/**
- * Handle unhandled promise rejections
- */
 function handleUnhandledRejection(event) {
-    console.error('🚨 Unhandled promise rejection:', event.reason);
-    updateSystemStatus('Promise Error', 'danger');
+    console.error('🚨 Promise rejection:', event.reason);
+    updateSystemStatus('Promise Error', 'warning');
 }
 
-// Log successful loading
-console.log('✅ AI Vision System JavaScript loaded successfully');
+console.log('✅ Optimized AI Vision System loaded');
