@@ -94,48 +94,39 @@ def detect():
         return jsonify({'error': f'Detection failed: {str(e)}'}), 500
 
 def process_voice_announcements(detections):
-    """Process voice announcements with smart filtering"""
+    """Process voice announcements with the new system"""
     try:
         if not detections:
             return
             
-        # Only announce if we have significant detections
-        high_confidence_detections = [d for d in detections if d.get('confidence', 0) > 0.7]
+        # Only announce high-confidence detections
+        good_detections = [d for d in detections if d.get('confidence', 0) > 0.65]
         
-        if not high_confidence_detections:
+        if not good_detections:
             return
             
-        # For single high-confidence detection
-        if len(high_confidence_detections) == 1:
-            detection = high_confidence_detections[0]
-            smart_speak_detection(detection['object'], detection['location'])
+        # Simple announcement for single detection
+        if len(good_detections) == 1:
+            detection = good_detections[0]
+            speak_detection(detection['object'], detection['location'])
             return
         
-        # For multiple detections, create summary
-        object_types = set()
-        for detection in high_confidence_detections[:3]:  # Max 3 objects
-            object_types.add(detection['object'])
+        # For multiple detections, just announce count and first object
+        first_obj = good_detections[0]['object']
+        count = len(good_detections)
         
-        if len(object_types) == 1:
-            obj_name = list(object_types)[0]
-            count = len(high_confidence_detections)
-            if count > 1:
-                smart_speak_detection("object", f"{count} {obj_name}s detected")
-            else:
-                smart_speak_detection(obj_name, high_confidence_detections[0]['location'])
+        if count == 2:
+            speak_detection("object", f"Two objects detected")
+        elif count <= 5:
+            speak_detection("object", f"{count} objects detected")
         else:
-            # Multiple object types
-            obj_list = list(object_types)[:2]  # Max 2 types
-            if len(obj_list) == 2:
-                smart_speak_detection("object", f"{obj_list[0]} and {obj_list[1]} detected")
-            else:
-                smart_speak_detection("object", f"Multiple objects detected")
+            speak_detection("object", "Multiple objects detected")
                 
     except Exception as e:
         print(f"❌ Voice processing error: {str(e)}")
 
-# Import the new function
-from back_end_process.voice_api import smart_speak_detection
+# Remove the old import
+from back_end_process.voice_api import speak_detection
 
 @main.route('/status', methods=['GET'])
 def get_status():
@@ -149,28 +140,22 @@ def get_status():
 
 @main.route('/test_voice', methods=['POST'])
 def test_voice():
-    """Test voice system with better error reporting"""
+    """Test the new voice system"""
     try:
-        from back_end_process.voice_api import smart_speak_detection, voice_initialized
+        from back_end_process.voice_api import speak_detection, current_voice_method
         
-        if not voice_initialized:
-            return jsonify({
-                'status': 'error', 
-                'message': 'Voice system not initialized'
-            }), 500
-        
-        success = smart_speak_detection("system", "Voice test successful")
+        success = speak_detection("system", "Voice system working correctly")
         
         return jsonify({
-            'status': 'success' if success else 'warning',
-            'message': 'Voice test queued' if success else 'Voice test skipped (cooldown or queue full)'
-        }), 200
+            'success': success,
+            'method': current_voice_method.name if current_voice_method else 'None',
+            'message': 'Voice test queued' if success else 'Voice test failed or on cooldown'
+        })
             
     except Exception as e:
         print(f"❌ Voice test error: {str(e)}")
         return jsonify({
-            'status': 'error', 
-            'message': f'Voice test failed: {str(e)}'
+            'error': str(e)
         }), 500
 
 @main.route('/voice_debug', methods=['GET'])
