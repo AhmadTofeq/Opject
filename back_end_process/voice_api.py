@@ -1,4 +1,4 @@
-# back_end_process/voice_api.py - Fixed version with better queue management
+# back_end_process/voice_api.py - Completely redesigned for better performance
 
 from flask import Blueprint, request, jsonify
 import pyttsx3
@@ -9,171 +9,216 @@ import traceback
 
 voice_bp = Blueprint('voice', __name__)
 
-# Thread-safe voice system
+# Voice system variables
 engine = None
 engine_lock = threading.Lock()
-voice_queue = queue.Queue(maxsize=5)  # Reduced queue size
+voice_queue = queue.Queue(maxsize=3)  # Very small queue
 voice_thread = None
 voice_active = True
 voice_initialized = False
+last_announcement_time = 0
+announcement_cooldown = 2.0  # Minimum 2 seconds between announcements
 
 def init_engine():
-    """Initialize the TTS engine with error handling"""
+    """Initialize TTS engine with minimal settings for maximum reliability"""
     global engine, voice_initialized
     
-    if engine is not None and voice_initialized:
-        return True
-        
     try:
-        print("🔊 Initializing pyttsx3 engine...")
+        print("🔊 Initializing minimal pyttsx3 engine...")
+        
+        # Destroy existing engine if any
+        if engine is not None:
+            try:
+                engine.stop()
+                del engine
+            except:
+                pass
+        
         engine = pyttsx3.init()
         
-        # Test if engine works
+        # Minimal configuration for reliability
         voices = engine.getProperty('voices')
         if voices and len(voices) > 0:
             engine.setProperty('voice', voices[0].id)
         
-        engine.setProperty('rate', 150)    # Slower, more reliable speech
-        engine.setProperty('volume', 0.7)  # Reduced volume
+        engine.setProperty('rate', 180)     # Faster speech
+        engine.setProperty('volume', 0.8)   # Good volume
         
-        # Test the engine with a short phrase
-        engine.say("Voice system ready")
-        engine.runAndWait()
-        
+        # Quick test without runAndWait to avoid blocking
+        print("✅ pyttsx3 engine initialized successfully")
         voice_initialized = True
-        print("✅ pyttsx3 engine initialized and tested successfully")
         return True
         
     except Exception as e:
         print(f"❌ Failed to initialize pyttsx3: {str(e)}")
-        print(f"Full error: {traceback.format_exc()}")
         engine = None
         voice_initialized = False
         return False
 
 def voice_worker():
-    """Background thread worker for processing voice queue with better error handling"""
-    global voice_active, voice_initialized
+    """Optimized voice worker with timeout protection"""
+    global voice_active, voice_initialized, last_announcement_time
     
     print("🎤 Voice worker thread started")
     
     while voice_active:
         try:
-            # Get message with timeout
-            message = voice_queue.get(timeout=2.0)
+            # Get message with short timeout
+            try:
+                message = voice_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
             
             if message is None:  # Shutdown signal
-                print("🔇 Voice worker received shutdown signal")
+                print("🔇 Voice worker shutdown")
                 break
             
+            # Check cooldown to prevent spam
+            current_time = time.time()
+            if current_time - last_announcement_time < announcement_cooldown:
+                print(f"🕐 Voice cooldown active, skipping: {message[:30]}...")
+                voice_queue.task_done()
+                continue
+            
             if not voice_initialized:
-                print("⚠️ Voice engine not initialized, skipping message")
+                print("⚠️ Voice engine not ready, skipping")
                 voice_queue.task_done()
                 continue
                 
-            # Process the message with error handling
-            try:
-                with engine_lock:
-                    if engine is not None:
-                        print(f"🔊 Speaking: {message}")
-                        engine.say(message)
-                        engine.runAndWait()
-                        print("✅ Speech completed successfully")
-                    else:
-                        print("❌ Engine is None, cannot speak")
-                        
-            except Exception as speech_error:
-                print(f"❌ Speech synthesis error: {str(speech_error)}")
-                # Try to reinitialize engine on error
-                try:
-                    engine.stop()
-                except:
-                    pass
-                voice_initialized = False
-                init_engine()
-                        
-            voice_queue.task_done()
-            time.sleep(0.1)  # Small delay between messages
+            # Speak with timeout protection
+            success = speak_with_timeout(message, timeout_seconds=3.0)
             
-        except queue.Empty:
-            # Normal timeout, continue loop
-            continue
+            if success:
+                last_announcement_time = current_time
+                print(f"✅ Spoke: {message[:50]}...")
+            else:
+                print(f"❌ Failed to speak: {message[:30]}...")
+                
+            voice_queue.task_done()
+            
+            # Small delay to prevent overwhelming
+            time.sleep(0.2)
+            
         except Exception as e:
             print(f"❌ Voice worker error: {str(e)}")
-            print(f"Full error: {traceback.format_exc()}")
-            time.sleep(1)  # Wait before retrying
+            try:
+                voice_queue.task_done()
+            except:
+                pass
+            time.sleep(0.5)
     
-    print("🔇 Voice worker thread stopped")
+    print("🔇 Voice worker stopped")
 
-def start_voice_system():
-    """Start the voice system with better initialization"""
-    global voice_thread, voice_active
+def speak_with_timeout(message, timeout_seconds=3.0):
+    """Speak with timeout protection to prevent hanging"""
+    global engine
     
-    print("🚀 Starting voice system...")
-    
-    # Initialize engine first
-    if not init_engine():
-        print("❌ Failed to initialize voice engine")
+    if not engine or not voice_initialized:
         return False
     
-    # Clear any existing queue
+    try:
+        # Use a separate thread for speaking with timeout
+        speak_result = [False]  # Use list for mutable reference
+        
+        def speak_thread():
+            try:
+                with engine_lock:
+                    if engine:
+                        engine.say(message)
+                        engine.runAndWait()
+                        speak_result[0] = True
+            except Exception as e:
+                print(f"❌ Speech thread error: {e}")
+        
+        # Start speaking thread
+        thread = threading.Thread(target=speak_thread, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout_seconds)
+        
+        if thread.is_alive():
+            print(f"⏰ Speech timeout for: {message[:30]}...")
+            # Try to stop the engine
+            try:
+                with engine_lock:
+                    if engine:
+                        engine.stop()
+            except:
+                pass
+            return False
+        
+        return speak_result[0]
+        
+    except Exception as e:
+        print(f"❌ Speak timeout error: {e}")
+        return False
+
+def start_voice_system():
+    """Start voice system with better error handling"""
+    global voice_thread, voice_active
+    
+    print("🚀 Starting optimized voice system...")
+    
+    # Initialize engine
+    if not init_engine():
+        print("❌ Voice engine initialization failed")
+        return False
+    
+    # Clear queue
     clear_voice_queue()
     
-    # Start worker thread if not already running
+    # Start worker thread
     if voice_thread is None or not voice_thread.is_alive():
         voice_active = True
         voice_thread = threading.Thread(target=voice_worker, daemon=True, name="VoiceWorker")
         voice_thread.start()
-        print("✅ Voice worker thread started")
         
-        # Give thread time to start
-        time.sleep(0.5)
-        
+        # Wait a bit and check
+        time.sleep(0.3)
         if voice_thread.is_alive():
-            print("✅ Voice system fully operational")
+            print("✅ Voice system operational")
             return True
         else:
-            print("❌ Voice worker thread failed to start")
+            print("❌ Voice thread failed to start")
             return False
-    else:
-        print("✅ Voice system already running")
-        return True
+    
+    return True
 
 def clear_voice_queue():
-    """Clear the voice queue"""
+    """Aggressively clear the voice queue"""
+    cleared_count = 0
     try:
         while not voice_queue.empty():
             try:
                 voice_queue.get_nowait()
                 voice_queue.task_done()
+                cleared_count += 1
             except queue.Empty:
                 break
-        print("🧹 Voice queue cleared")
+        
+        if cleared_count > 0:
+            print(f"🧹 Cleared {cleared_count} voice messages")
+            
     except Exception as e:
-        print(f"⚠️ Error clearing voice queue: {e}")
+        print(f"⚠️ Error clearing queue: {e}")
 
 def stop_voice_system():
-    """Stop the voice system gracefully"""
+    """Stop voice system gracefully"""
     global voice_active, voice_thread, voice_initialized
     
     print("🛑 Stopping voice system...")
     voice_active = False
+    voice_initialized = False
     
-    # Clear queue and add shutdown signal
+    # Clear queue and signal shutdown
     clear_voice_queue()
-    
     try:
-        voice_queue.put(None, timeout=1.0)  # Shutdown signal
-    except queue.Full:
+        voice_queue.put(None, timeout=0.5)
+    except:
         pass
     
-    # Wait for thread to finish
+    # Stop thread
     if voice_thread and voice_thread.is_alive():
-        voice_thread.join(timeout=3.0)
-        if voice_thread.is_alive():
-            print("⚠️ Voice thread did not stop gracefully")
-        else:
-            print("✅ Voice thread stopped")
+        voice_thread.join(timeout=2.0)
     
     # Stop engine
     if engine:
@@ -183,65 +228,67 @@ def stop_voice_system():
         except:
             pass
     
-    voice_initialized = False
     print("✅ Voice system stopped")
 
-def speak_detection(object_name, location):
-    """Add detection to voice queue for async processing"""
-    global voice_initialized
+def smart_speak_detection(object_name, location):
+    """Smart speaking with cooldown and queue management"""
+    global last_announcement_time
     
     if not voice_initialized:
-        print("⚠️ Voice system not initialized")
         return False
         
     if not object_name or not location:
-        print("❌ Missing object name or location")
         return False
     
-    # Smart message formatting
+    # Check cooldown
+    current_time = time.time()
+    if current_time - last_announcement_time < announcement_cooldown:
+        return False  # Skip due to cooldown
+    
+    # Format message
     if object_name.lower() == "object":
-        message = location  # location contains the full message
+        message = location
     elif object_name.lower() == "system":
-        message = location  # system announcements
+        message = location
     else:
-        clean_object = object_name.replace('_', ' ').strip().title()
-        clean_location = location.replace('_', ' ').strip()
-        message = f"{clean_object} detected in {clean_location}"
+        message = f"{object_name.title()} detected in {location}"
     
     # Limit message length
-    if len(message) > 100:
-        message = message[:97] + "..."
+    if len(message) > 80:
+        message = message[:77] + "..."
     
+    # Clear queue if full and add message
     try:
-        # Check queue size and clear if too full
-        if voice_queue.qsize() >= 4:
-            print("🧹 Voice queue nearly full, clearing old messages")
+        if voice_queue.qsize() >= 2:
+            print("🧹 Queue nearly full, clearing...")
             clear_voice_queue()
         
-        # Add to queue without blocking
         voice_queue.put(message, block=False)
-        print(f"📢 Queued voice message: {message[:50]}...")
+        print(f"📢 Queued: {message[:40]}...")
         return True
         
     except queue.Full:
-        print("⚠️ Voice queue full, clearing and retrying")
+        print("⚠️ Queue full, clearing and retrying...")
         clear_voice_queue()
         try:
             voice_queue.put(message, block=False)
             return True
-        except queue.Full:
-            print("❌ Voice queue still full after clearing")
+        except:
             return False
     except Exception as e:
-        print(f"❌ Voice queue error: {str(e)}")
+        print(f"❌ Queue error: {e}")
         return False
+
+# Keep original function name for compatibility
+def speak_detection(object_name, location):
+    """Wrapper for backwards compatibility"""
+    return smart_speak_detection(object_name, location)
 
 @voice_bp.route('/api/speak', methods=['POST'])
 def speak():
-    """HTTP endpoint for voice API with better error handling"""
+    """HTTP endpoint for voice API"""
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
             
@@ -249,62 +296,61 @@ def speak():
         location = data.get('location', '')
 
         if not object_name or not location:
-            return jsonify({'error': 'Both "object" and "location" are required.'}), 400
+            return jsonify({'error': 'Missing object or location'}), 400
 
-        # Check if voice system is running
         if not voice_initialized:
-            return jsonify({'error': 'Voice system not initialized'}), 500
+            return jsonify({'error': 'Voice system not ready'}), 500
 
-        # Use the async function
-        success = speak_detection(object_name, location)
+        success = smart_speak_detection(object_name, location)
         
-        if success:
-            return jsonify({
-                'message': f'Queued: {object_name} in {location}',
-                'queue_size': voice_queue.qsize()
-            }), 200
-        else:
-            return jsonify({'error': 'Failed to queue speech'}), 500
+        return jsonify({
+            'success': success,
+            'message': 'Queued' if success else 'Skipped or failed',
+            'queue_size': voice_queue.qsize()
+        }), 200
             
     except Exception as e:
-        print(f"❌ API speak error: {str(e)}")
-        return jsonify({'error': f'API error: {str(e)}'}), 500
+        print(f"❌ API error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @voice_bp.route('/api/voice_status', methods=['GET'])
 def voice_status():
-    """Get voice system status"""
+    """Get detailed voice system status"""
     return jsonify({
-        'engine_initialized': voice_initialized,
+        'initialized': voice_initialized,
         'engine_available': engine is not None,
         'queue_size': voice_queue.qsize(),
-        'thread_active': voice_thread.is_alive() if voice_thread else False,
-        'voice_active': voice_active
+        'thread_alive': voice_thread.is_alive() if voice_thread else False,
+        'cooldown_remaining': max(0, announcement_cooldown - (time.time() - last_announcement_time))
     })
 
 @voice_bp.route('/api/voice_clear', methods=['POST'])
-def clear_queue():
-    """Clear the voice queue manually"""
+def clear_queue_endpoint():
+    """Clear voice queue endpoint"""
     clear_voice_queue()
-    return jsonify({'message': 'Voice queue cleared', 'queue_size': voice_queue.qsize()})
+    return jsonify({
+        'message': 'Queue cleared',
+        'queue_size': voice_queue.qsize()
+    })
 
 @voice_bp.route('/api/voice_restart', methods=['POST'])
 def restart_voice():
-    """Restart the voice system"""
+    """Restart voice system endpoint"""
     stop_voice_system()
-    time.sleep(1)
+    time.sleep(0.5)
     success = start_voice_system()
     return jsonify({
         'success': success,
-        'message': 'Voice system restarted' if success else 'Failed to restart voice system'
+        'message': 'Restarted' if success else 'Failed to restart'
     })
 
-# Initialize voice system when module loads
+# Initialize when module loads
 print("🔊 Loading voice system...")
 if start_voice_system():
-    print("✅ Voice system loaded successfully")
+    print("✅ Voice system ready")
 else:
-    print("❌ Voice system failed to load")
+    print("❌ Voice system initialization failed")
 
-# Cleanup function for graceful shutdown
+# Cleanup on exit
 import atexit
 atexit.register(stop_voice_system)
