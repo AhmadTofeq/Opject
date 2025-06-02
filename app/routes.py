@@ -94,9 +94,18 @@ def detect():
         return jsonify({'error': f'Detection failed: {str(e)}'}), 500
 
 def process_voice_announcements(detections):
-    """Process voice announcements in background thread"""
+    """Process voice announcements in background thread with improved logic"""
     try:
-        # Group similar objects to avoid repetitive announcements
+        if not detections:
+            return
+            
+        # Simple announcement for single detection
+        if len(detections) == 1:
+            detection = detections[0]
+            speak_detection(detection['object'], detection['location'])
+            return
+        
+        # Group similar objects for multiple detections
         object_counts = {}
         locations = {}
         
@@ -112,25 +121,18 @@ def process_voice_announcements(detections):
             if loc not in locations[obj]:
                 locations[obj].append(loc)
         
-        # Create smart announcements
-        announcements = []
-        
-        for obj, count in object_counts.items():
+        # Create single smart announcement
+        parts = []
+        for obj, count in list(object_counts.items())[:2]:  # Max 2 object types
             if count == 1:
-                announcements.append(f"{obj} in {locations[obj][0]}")
+                parts.append(f"{obj} in {locations[obj][0]}")
             else:
-                loc_str = ", ".join(locations[obj][:2])  # Max 2 locations
-                if len(locations[obj]) > 2:
-                    loc_str += " and other areas"
-                announcements.append(f"{count} {obj}s detected in {loc_str}")
+                loc_str = locations[obj][0] if locations[obj] else "unknown"
+                parts.append(f"{count} {obj}s")
         
-        # Speak each announcement with small delay
-        for announcement in announcements[:3]:  # Limit to 3 announcements
-            try:
-                speak_detection("object", announcement)
-                time.sleep(0.3)  # Small delay between announcements
-            except Exception as e:
-                print(f"❌ Voice announcement failed: {str(e)}")
+        if parts:
+            announcement = " and ".join(parts) + " detected"
+            speak_detection("object", announcement)
                 
     except Exception as e:
         print(f"❌ Voice processing error: {str(e)}")
@@ -147,9 +149,32 @@ def get_status():
 
 @main.route('/test_voice', methods=['POST'])
 def test_voice():
-    """Test voice system"""
+    """Test voice system with better error reporting"""
     try:
-        speak_detection("system", "Voice system test successful")
-        return jsonify({'status': 'success', 'message': 'Voice test completed'})
+        from back_end_process.voice_api import speak_detection, voice_initialized
+        
+        if not voice_initialized:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Voice system not initialized. Check console for errors.'
+            }), 500
+        
+        success = speak_detection("system", "Voice system test successful")
+        
+        if success:
+            return jsonify({
+                'status': 'success', 
+                'message': 'Voice test queued successfully'
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Failed to queue voice test'
+            }), 500
+            
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        print(f"❌ Voice test error: {str(e)}")
+        return jsonify({
+            'status': 'error', 
+            'message': f'Voice test failed: {str(e)}'
+        }), 500
